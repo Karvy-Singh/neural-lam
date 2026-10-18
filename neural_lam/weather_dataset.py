@@ -58,8 +58,9 @@ class WeatherDataset(torch.utils.data.Dataset):
         ValueError
             If the datastore does not provide state data, if the configured
             ``ar_steps`` and forcing windows leave zero samples in ``split``,
-            or if the state/forcing dimension order does not match the
-            datastore's expected dimension order.
+            if the state and forcing time coordinates do not align, or if the
+            state/forcing dimension order does not match the datastore's
+            expected dimension order.
         """
         super().__init__()
 
@@ -81,6 +82,25 @@ class WeatherDataset(torch.utils.data.Dataset):
         self.da_forcing = self.datastore.get_dataarray(
             category="forcing", split=self.split
         )
+
+        if self.da_forcing is not None:
+            temporal_coords = (
+                ("analysis_time", "elapsed_forecast_duration")
+                if self.datastore.is_forecast
+                else ("time",)
+            )
+            for coord_name in temporal_coords:
+                state_coord = self.da_state[coord_name]
+                forcing_coord = self.da_forcing[coord_name]
+                overlap = min(state_coord.size, forcing_coord.size)
+                coord_slice = {coord_name: slice(0, overlap)}
+                if not state_coord.isel(**coord_slice).equals(
+                    forcing_coord.isel(**coord_slice)
+                ):
+                    raise ValueError(
+                        "State and forcing "
+                        f"{coord_name} coordinates must align."
+                    )
 
         if self.datastore.is_ensemble and self.load_single_member:
             warnings.warn(

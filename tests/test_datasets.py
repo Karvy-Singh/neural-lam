@@ -477,3 +477,36 @@ def test_forecast_ensemble_len_scales_with_default_all_members():
         )
 
     assert len(dataset_all) == len(dataset_single) * 3
+
+
+def test_dataset_rejects_misaligned_analysis_times():
+    datastore = EnsembleDummyDatastore(is_forecast=False, n_timesteps=10)
+    datastore._da_forcing = datastore._da_forcing.assign_coords(
+        time=datastore._da_forcing.time + np.timedelta64(1, "h")
+    )
+
+    with pytest.raises(ValueError, match="time coordinates must align"):
+        WeatherDataset(datastore=datastore)
+
+
+@pytest.mark.parametrize(
+    "coord_name,offset",
+    [
+        ("analysis_time", np.timedelta64(1, "h")),
+        ("elapsed_forecast_duration", np.timedelta64(1, "h")),
+    ],
+)
+def test_dataset_rejects_misaligned_forecast_times(coord_name, offset):
+    datastore = EnsembleDummyDatastore(
+        is_forecast=True,
+        n_analysis_times=4,
+        n_forecast_steps=6,
+    )
+    datastore._da_forcing = datastore._da_forcing.assign_coords(
+        {coord_name: datastore._da_forcing[coord_name] + offset}
+    )
+
+    with pytest.raises(
+        ValueError, match=rf"{coord_name} coordinates must align"
+    ):
+        WeatherDataset(datastore=datastore, ar_steps=2)
